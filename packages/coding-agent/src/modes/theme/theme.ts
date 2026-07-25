@@ -117,6 +117,7 @@ export type SymbolKey =
 	| "icon.input"
 	| "icon.output"
 	| "icon.throughput"
+	| "icon.latency"
 	| "icon.host"
 	| "icon.session"
 	| "icon.package"
@@ -327,6 +328,7 @@ const UNICODE_SYMBOLS: SymbolMap = {
 	"icon.input": "⤵",
 	"icon.output": "⤴",
 	"icon.throughput": "⚡",
+	"icon.latency": "⏱",
 	"icon.host": "🖥",
 	"icon.session": "🆔",
 	"icon.package": "📦",
@@ -610,8 +612,9 @@ const NERD_SYMBOLS: SymbolMap = {
 	"icon.input": "\uf090",
 	// pick:  | alt:  →
 	"icon.output": "\uf08b",
-	// pick:  (nf-fa-tachometer) | alt:  ⚡ ↬
 	"icon.throughput": "\uf0e4",
+	// pick:  (nf-fa-stopwatch) | alt:
+	"icon.latency": "\uf2fb",
 	// pick:  | alt:  
 	"icon.host": "\uf109",
 	// pick: 󰁑 (nf-md-arrow_left_bold_hexagon_outline) | alt:  
@@ -842,8 +845,9 @@ const ASCII_SYMBOLS: SymbolMap = {
 	"icon.ghost": "@",
 	"icon.agents": "AG",
 	"icon.job": "bg",
-	"icon.output": "out:",
 	"icon.throughput": "tok/s:",
+	"icon.latency": "ttft:",
+	"icon.output": "out:",
 	"icon.cache": "cache",
 	"icon.cacheMiss": "!",
 	"icon.input": "in:",
@@ -1853,6 +1857,7 @@ export class Theme {
 			warning: this.#symbols["icon.warning"],
 			rewind: this.#symbols["icon.rewind"],
 			auto: this.#symbols["icon.auto"],
+			latency: this.#symbols["icon.latency"],
 			fast: this.#symbols["icon.fast"],
 			extensionSkill: this.#symbols["icon.extensionSkill"],
 			extensionTool: this.#symbols["icon.extensionTool"],
