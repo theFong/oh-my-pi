@@ -89,6 +89,18 @@ export interface SegmentContext {
 		premiumRequests: number;
 		cost: number;
 		tokensPerSecond: number | null;
+		/**
+		 * Recent per-turn tok/s samples (oldest → newest) used to draw the
+		 * {@link StatusLineSegmentId.token_rate_spark} trend sparkline. Optional so
+		 * mock/test contexts that predate the field still typecheck.
+		 */
+		tokensPerSecondHistory?: readonly number[];
+		/**
+		 * Time to first token (ms) of the last assistant turn, or null when
+		 * the provider did not report one. Drives the
+		 * {@link StatusLineSegmentId.ttft} segment.
+		 */
+		ttftMs?: number | null;
 	};
 	/** Context usage percent, or null when unknown (e.g. right after compaction). */
 	contextPercent: number | null;

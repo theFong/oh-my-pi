@@ -319,6 +319,14 @@ export class StatusLineComponent implements Component {
 	#defaultBranchCwd: string | undefined = undefined;
 	#lastTokensPerSecond: number | null = null;
 	#lastTokensPerSecondTimestamp: number | null = null;
+	// Rolling per-turn tok/s samples for the throughput sparkline. Keyed by the
+	// source assistant timestamp so a still-streaming turn updates its own bar
+	// (rate keeps climbing) instead of appending a new one every render.
+	#tokensPerSecondHistory: Array<{ timestamp: number; rate: number }> = [];
+	// Last assistant turn's TTFT (ms) keyed by its timestamp, so a still-
+	// streaming turn's value is returned until the next assistant arrives.
+	#lastTtftMs: number | null = null;
+	#lastTtftTimestamp: number | null = null;
 
 	// Provider usage caching (5-min TTL, OAuth/sub only)
 	#cachedUsage: {
@@ -616,10 +624,11 @@ export class StatusLineComponent implements Component {
 		this.#clearUsageStartTimer();
 		this.#cachedUsage = null;
 		this.#usageFetchedAt = 0;
-		this.#usageInFlight = false;
-		this.#contextUsageCache = undefined;
+		this.#tokensPerSecondHistory = [];
 		this.#lastTokensPerSecond = null;
 		this.#lastTokensPerSecondTimestamp = null;
+		this.#lastTtftMs = null;
+		this.#lastTtftTimestamp = null;
 	}
 
 	#invalidateGitCaches(): void {
@@ -918,6 +927,7 @@ export class StatusLineComponent implements Component {
 		if (rate !== null) {
 			this.#lastTokensPerSecond = rate;
 			this.#lastTokensPerSecondTimestamp = lastAssistantTimestamp;
+			this.#recordTokensPerSecond(lastAssistantTimestamp, rate);
 			return rate;
 		}
 
@@ -926,6 +936,57 @@ export class StatusLineComponent implements Component {
 		}
 
 		return null;
+	}
+	/**
+	 * TTFT (ms) of the most recent assistant message, memoized by its timestamp.
+	 * A still-streaming turn has no `ttft` yet (providers set it on completion),
+	 * so the previous turn's value is returned until the new one finishes.
+	 */
+	#getLastTtftMs(): number | null {
+		let lastAssistantTimestamp: number | null = null;
+		let lastTtft: number | null = null;
+		for (let i = this.session.state.messages.length - 1; i >= 0; i--) {
+			const message = this.session.state.messages[i];
+			if (message?.role === "assistant") {
+				lastAssistantTimestamp = message.timestamp;
+				lastTtft = typeof message.ttft === "number" && message.ttft > 0 ? message.ttft : null;
+				break;
+			}
+		}
+		if (lastAssistantTimestamp === null) {
+			this.#lastTtftMs = null;
+			this.#lastTtftTimestamp = null;
+			return null;
+		}
+		if (lastTtft !== null) {
+			this.#lastTtftMs = lastTtft;
+			this.#lastTtftTimestamp = lastAssistantTimestamp;
+			return lastTtft;
+		}
+		if (this.#lastTtftTimestamp === lastAssistantTimestamp) {
+			return this.#lastTtftMs;
+		}
+		return null;
+	}
+
+	/** Max tok/s samples retained for the throughput sparkline. */
+	static readonly #TOKENS_PER_SECOND_HISTORY_LIMIT = 16;
+
+	/**
+	 * Upsert one tok/s sample keyed by its assistant turn. A still-streaming turn
+	 * shares a timestamp with its prior sample, so its bar updates in place rather
+	 * than appending a duplicate every render frame.
+	 */
+	#recordTokensPerSecond(timestamp: number, rate: number): void {
+		const history = this.#tokensPerSecondHistory;
+		const last = history.at(-1);
+		if (last && last.timestamp === timestamp) {
+			last.rate = rate;
+			return;
+		}
+		history.push({ timestamp, rate });
+		const overflow = history.length - StatusLineComponent.#TOKENS_PER_SECOND_HISTORY_LIMIT;
+		if (overflow > 0) history.splice(0, overflow);
 	}
 
 	/**
@@ -1185,6 +1246,8 @@ export class StatusLineComponent implements Component {
 		const usageStats = {
 			...aggregateUsageStats,
 			tokensPerSecond: this.#getTokensPerSecond(),
+			tokensPerSecondHistory: this.#tokensPerSecondHistory.map(sample => sample.rate),
+			ttftMs: this.#getLastTtftMs(),
 		};
 
 		let contextWindow = state.model?.contextWindow ?? this.session.model?.contextWindow ?? 0;

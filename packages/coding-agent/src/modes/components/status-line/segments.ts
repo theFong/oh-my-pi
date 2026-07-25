@@ -49,6 +49,29 @@ function normalizePremiumRequests(value: number): number {
 	return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/** Eighth-block glyphs, low → high, for compact trend sparklines. */
+const SPARK_BARS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"] as const;
+/** Newest samples shown by the throughput sparkline; older ones scroll off. */
+const SPARK_MAX_SAMPLES = 12;
+
+/**
+ * Render `values` (oldest → newest) as a block-glyph sparkline, scaled to the
+ * window's own peak so the trend fills the vertical range. Returns "" when there
+ * are fewer than two samples — a lone bar reads as noise, not a trend.
+ */
+function renderSparkline(values: readonly number[]): string {
+	const samples = values.slice(-SPARK_MAX_SAMPLES).filter(v => Number.isFinite(v) && v > 0);
+	if (samples.length < 2) return "";
+	const peak = Math.max(...samples);
+	if (peak <= 0) return "";
+	return samples
+		.map(v => {
+			const level = Math.round((v / peak) * (SPARK_BARS.length - 1));
+			return SPARK_BARS[Math.min(SPARK_BARS.length - 1, Math.max(0, level))];
+		})
+		.join("");
+}
+
 const SCRATCH_ROOTS: readonly string[] = (() => {
 	const roots = new Set<string>([os.tmpdir(), path.join(os.homedir(), "tmp")]);
 	if (process.platform === "win32") {
@@ -418,13 +441,50 @@ const tokenTotalSegment: StatusLineSegment = {
 	},
 };
 
+/**
+ * Trend sparkline for the tok/s readout, drawn from the recent per-turn
+ * samples via {@link renderSparkline}. Returns "" until at least two samples
+ * exist (a lone bar reads as noise, not a trend), so the readout stays bare
+ * on the first turn and the sparkline grows in from the second onward.
+ */
 const tokenRateSegment: StatusLineSegment = {
 	id: "token_rate",
 	render(ctx) {
-		const { tokensPerSecond } = ctx.usageStats;
+		const { tokensPerSecond, tokensPerSecondHistory } = ctx.usageStats;
+		if (!tokensPerSecond) return { content: "", visible: false };
+		const spark = renderSparkline(tokensPerSecondHistory ?? []);
+		const readout = `${tokensPerSecond.toFixed(1)} tok/s`;
+		const content = withIcon(theme.icon.throughput, spark ? `${spark} ${readout}` : readout);
+		return { content: theme.fg("statusLineOutput", content), visible: true };
+	},
+};
+
+const tokenRateSparkSegment: StatusLineSegment = {
+	id: "token_rate_spark",
+	render(ctx) {
+		const { tokensPerSecond, tokensPerSecondHistory } = ctx.usageStats;
 		if (!tokensPerSecond) return { content: "", visible: false };
 
-		const content = withIcon(theme.icon.throughput, `${tokensPerSecond.toFixed(1)} tok/s`);
+		const spark = renderSparkline(tokensPerSecondHistory ?? []);
+		const readout = `${tokensPerSecond.toFixed(1)} tok/s`;
+		const content = withIcon(theme.icon.throughput, spark ? `${spark} ${readout}` : readout);
+		return { content: theme.fg("statusLineOutput", content), visible: true };
+	},
+};
+
+/**
+ * Time to first token of the last assistant turn. Hidden until the provider
+ * reports one (providers set `message.ttft` on completion, not mid-stream),
+ * so the segment is blank during the first turn and right after compaction.
+ */
+const ttftSegment: StatusLineSegment = {
+	id: "ttft",
+	render(ctx) {
+		const { ttftMs } = ctx.usageStats;
+		if (!ttftMs || ttftMs <= 0) return { content: "", visible: false };
+		// Providers report sub-millisecond TTFT (e.g. 873.9155ms); round to the
+		// nearest whole ms so the readout stays short and stable across renders.
+		const content = withIcon(theme.icon.latency, formatDuration(Math.round(ttftMs)));
 		return { content: theme.fg("statusLineOutput", content), visible: true };
 	},
 };
@@ -684,7 +744,9 @@ export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	token_out: tokenOutSegment,
 	token_total: tokenTotalSegment,
 	token_rate: tokenRateSegment,
+	token_rate_spark: tokenRateSparkSegment,
 	cost: costSegment,
+	ttft: ttftSegment,
 	context_pct: contextPctSegment,
 	context_total: contextTotalSegment,
 	time_spent: timeSpentSegment,
