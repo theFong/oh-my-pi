@@ -1543,6 +1543,12 @@ function buildParams(
 		messages: [],
 		stream: true,
 	};
+	// Inject session_id into request metadata so LiteLLM's langfuse_otel callback
+	// can group traces by OMP session in Langfuse. LiteLLM reads `metadata.session_id`
+	// and stamps it as the Langfuse trace's `session_id`.
+	if (options?.sessionId) {
+		params.metadata = { ...(options.metadata ?? {}), session_id: options.sessionId };
+	}
 	let toolStrictMode: AppliedToolStrictMode = "none";
 	let strictToolsApplied = false;
 
